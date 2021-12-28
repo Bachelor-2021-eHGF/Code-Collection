@@ -1,0 +1,1073 @@
+---
+title: "Untitled"
+author: "Ormo"
+date: "12/16/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+pacman::p_load(tidyverse, 
+               R.matlab, 
+               lmerTest,
+               rethinking,
+               glmmTMB, 
+               effects, 
+               sjPlot,
+               brms,
+               bayesplot)
+
+```
+
+```{r}
+# Loading large dataframe
+large_track <- readMat('Data/track14520.mat')
+maxmin1_track <- readMat('Data/trackmaxminpt1.mat')
+maxmin2_track <- readMat('Data/trackmaxminpt2.mat')
+
+d_NA <- cbind(large_track[["track"]][[1]],
+              rbind(maxmin1_track[["track"]][[1]], 
+                    maxmin2_track[["track"]][[1]])) %>% as.data.frame()
+
+colnames(d_NA) = c('na_HGF', 
+                'na_eHGF', 
+                'na_eHGF_optim',
+                'na_eHGF_dev',
+                'na_eHGF_round',
+                'na_eHGF_maxmin')
+
+d_LME <- cbind(large_track[["track"]][[2]],
+              rbind(maxmin1_track[["track"]][[2]], 
+                    maxmin2_track[["track"]][[2]])) %>% as.data.frame()
+
+colnames(d_LME) = c('LME_HGF', 
+                'LME_eHGF', 
+                'LME_eHGF_optim',
+                'LME_eHGF_dev',
+                'LME_eHGF_round',
+                'LME_eHGF_maxmin')
+
+d_om2 <- cbind(large_track[["track"]][[3]],
+              rbind(maxmin1_track[["track"]][[3]], 
+                    maxmin2_track[["track"]][[3]])) %>% as.data.frame()
+
+colnames(d_om2) = c(
+  'om2_true',
+  'om2_HGF',
+  'om2_eHGF',
+  'om2_eHGF_optim',
+  'om2_eHGF_dev',
+  'om2_eHGF_round',
+  'om2_eHGF_maxmin'
+)
+
+d_om3 <- cbind(large_track[["track"]][[4]],
+              rbind(maxmin1_track[["track"]][[4]], 
+                    maxmin2_track[["track"]][[4]])) %>% as.data.frame()
+
+colnames(d_om3) = c(
+  'om3_true',
+  'om3_HGF',
+  'om3_eHGF',
+  'om3_eHGF_optim',
+  'om3_eHGF_dev',
+  'om3_eHGF_round',
+  'om3_eHGF_maxmin'
+)
+
+d_ze <- cbind(large_track[["track"]][[5]],
+              rbind(maxmin1_track[["track"]][[5]], 
+                    maxmin2_track[["track"]][[5]])) %>% as.data.frame()
+
+colnames(d_ze) = c(
+  'ze_true',
+  'ze_HGF',
+  'ze_eHGF',
+  'ze_eHGF_optim',
+  'ze_eHGF_dev',
+  'ze_eHGF_round',
+  'ze_eHGF_maxmin'
+)
+
+d_param <- large_track[["track"]][[6]] %>% as.data.frame()
+
+colnames(d_param) = c('param_l1', 
+                'param_l2', 
+                'param_om2',
+                'param_om3',
+                'param_ze')
+
+d <- cbind(d_NA,
+           d_LME,
+           d_om2,
+           d_om3,
+           d_ze,
+           d_param) %>%
+  mutate(
+    om2_HGF_diff = om2_HGF - om2_true,
+    om3_HGF_diff = om3_HGF - om3_true,
+    ze_HGF_diff = (ze_HGF - ze_true),
+    om2_eHGF_diff = (om2_eHGF - om2_true),
+    om3_eHGF_diff = (om3_eHGF - om3_true),
+    ze_eHGF_diff = (ze_eHGF - ze_true),
+    om2_eHGF_optim_diff = (om2_eHGF_optim - om2_true),
+    om3_eHGF_optim_diff = (om3_eHGF_optim - om3_true),
+    ze_eHGF_optim_diff = (ze_eHGF_optim - ze_true),
+    om2_eHGF_dev_diff = (om2_eHGF_dev - om2_true),
+    om3_eHGF_dev_diff = (om3_eHGF_dev - om3_true),
+    ze_eHGF_dev_diff = (ze_eHGF_dev - ze_true),
+    om2_eHGF_maxmin_diff = (om2_eHGF_maxmin - om2_true),
+    om3_eHGF_maxmin_diff = (om3_eHGF_maxmin - om3_true),
+    ze_eHGF_maxmin_diff = (ze_eHGF_maxmin - ze_true),
+    param_l1 = as.factor(param_l1),
+    param_l2 = as.factor(param_l2),
+    param_om2 = as.factor(param_om2),
+    param_om3 = as.factor(param_om3),
+    param_ze = as.factor(param_ze),
+    om2_eHGF_eHGF_num_dif = om2_eHGF - om2_eHGF_dev,
+    om3_eHGF_eHGF_num_dif = om3_eHGF - om3_eHGF_dev,
+    ze_eHGF_eHGF_num_dif = ze_eHGF - ze_eHGF_dev
+  )
+  
+
+```
+
+```{r}
+#parameter om2 om3 (lower parameter values for both om2 and om3)
+d %>% 
+  group_by(param_om2, param_om3) %>% 
+  summarise(om2_diff = mean(abs(om2_HGF_diff)), 
+            om3_diff = mean(abs(om3_HGF_diff)), 
+            abs_difference_om2om3 = om2_diff + om3_diff) %>% 
+  ggplot(aes(param_om2, param_om3)) +                 
+  geom_tile(aes(fill = abs_difference_om2om3)) +
+  xlab("True Value of Omega2") +  
+  ylab("True Value of Omega3") +
+  theme_classic() +
+  scale_fill_gradient2(low = "darkred", 
+                       mid = "yellow", 
+                       high = "darkblue", 
+                       midpoint = 11,
+                       name = "Absolute Distance") 
+  
+#Parameter om2 zeta (lower zeta and om2, zeta can also go higher.. expand both ways)
+d %>% 
+  group_by(param_om2, param_ze) %>% 
+  summarise(om2_diff = mean(abs(om2_HGF_diff)), 
+            ze_diff = mean(abs(ze_HGF_diff)), 
+            abs_difference_om2ze = om2_diff + ze_diff) %>% 
+  ggplot(aes(param_om2, param_ze)) +                 
+  geom_tile(aes(fill = abs_difference_om2ze)) +
+  xlab("True Value of Omega2") +  
+  ylab("True Value of Zeta") +
+  theme_classic() +
+  scale_fill_gradient2(low = "darkred", 
+                       mid = "yellow", 
+                       high = "darkblue", 
+                       midpoint = 6.7,
+                       name = "Absolute Distance") 
+
+
+#Parameter om3 and za (lower on both...we are in the high-most corner of error)
+
+d %>% 
+  group_by(param_om3, param_ze) %>% 
+  summarise(om3_diff = mean(abs(om3_HGF_diff)), 
+            ze_diff = mean(abs(ze_HGF_diff)), 
+            abs_difference_om3ze = om3_diff + ze_diff) %>% 
+  ggplot(aes(param_om3, param_ze)) +                 
+  geom_tile(aes(fill = abs_difference_om3ze)) +
+  xlab("True Value of Omega3") +  
+  ylab("True Value of Zeta") +
+  theme_classic() +
+  scale_fill_gradient2(low = "darkred", 
+                       mid = "yellow", 
+                       high = "darkblue", 
+                       midpoint = 6.7,
+                       name = "Absolute Distance") 
+
+```
+
+```{r}
+#parameter om2 om3 (lower parameter values for both om2 and om3)
+d %>% 
+  group_by(param_om2, param_om3) %>% 
+  summarise(om2_diff = mean(abs(om2_eHGF_optim_diff)), 
+            om3_diff = mean(abs(om3_eHGF_optim_diff)), 
+            abs_difference_om2om3 = om2_diff + om3_diff) %>% 
+  ggplot(aes(param_om2, param_om3)) +                 
+  geom_tile(aes(fill = abs_difference_om2om3)) +
+  xlab("True Value of Omega2") +  
+  ylab("True Value of Omega3") +
+  theme_classic() +
+  scale_fill_gradient2(low = "darkred", 
+                       mid = "yellow", 
+                       high = "darkblue", 
+                       midpoint = 11,
+                       name = "Absolute Distance") 
+  
+#Parameter om2 zeta (lower zeta and om2, zeta can also go higher.. expand both ways)
+d %>% 
+  group_by(param_om2, param_ze) %>% 
+  summarise(om2_diff = mean(abs(om2_eHGF_optim_diff)), 
+            ze_diff = mean(abs(ze_eHGF_optim_diff)), 
+            abs_difference_om2ze = om2_diff + ze_diff) %>% 
+  ggplot(aes(param_om2, param_ze)) +                 
+  geom_tile(aes(fill = abs_difference_om2ze)) +
+  xlab("True Value of Omega2") +  
+  ylab("True Value of Zeta") +
+  theme_classic() +
+  scale_fill_gradient2(low = "darkred", 
+                       mid = "yellow", 
+                       high = "darkblue", 
+                       midpoint = 6.7,
+                       name = "Absolute Distance") 
+
+
+#Parameter om3 and za (lower on both...we are in the high-most corner of error)
+
+d %>% 
+  group_by(param_om3, param_ze) %>% 
+  summarise(om3_diff = mean(abs(om3_eHGF_optim_diff)), 
+            ze_diff = mean(abs(ze_eHGF_optim_diff)), 
+            abs_difference_om3ze = om3_diff + ze_diff) %>% 
+  ggplot(aes(param_om3, param_ze)) +                 
+  geom_tile(aes(fill = abs_difference_om3ze)) +
+  xlab("True Value of Omega3") +  
+  ylab("True Value of Zeta") +
+  theme_classic() +
+  scale_fill_gradient2(low = "darkred", 
+                       mid = "yellow", 
+                       high = "darkblue", 
+                       midpoint = 6.7,
+                       name = "Absolute Distance") 
+```
+
+```{r}
+#parameter om2 om3 (lower parameter values for both om2 and om3)
+d %>% 
+  group_by(param_om2, param_om3) %>% 
+  summarise(om2_diff = mean(abs(om2_eHGF_dev_diff)), 
+            om3_diff = mean(abs(om3_eHGF_dev_diff)), 
+            abs_difference_om2om3 = om2_diff + om3_diff) %>% 
+  ggplot(aes(param_om2, param_om3)) +                 
+  geom_tile(aes(fill = abs_difference_om2om3)) +
+  xlab("True Value of Omega2") +  
+  ylab("True Value of Omega3") +
+  theme_classic() +
+  scale_fill_gradient2(low = "darkred", 
+                       mid = "yellow", 
+                       high = "darkblue", 
+                       midpoint = 11,
+                       name = "Absolute Distance") 
+  
+#Parameter om2 zeta (lower zeta and om2, zeta can also go higher.. expand both ways)
+d %>% 
+  group_by(param_om2, param_ze) %>% 
+  summarise(om2_diff = mean(abs(om2_eHGF_dev_diff)), 
+            ze_diff = mean(abs(ze_eHGF_dev_diff)), 
+            abs_difference_om2ze = om2_diff + ze_diff) %>% 
+  ggplot(aes(param_om2, param_ze)) +                 
+  geom_tile(aes(fill = abs_difference_om2ze)) +
+  xlab("True Value of Omega2") +  
+  ylab("True Value of Zeta") +
+  theme_classic() +
+  scale_fill_gradient2(low = "darkred", 
+                       mid = "yellow", 
+                       high = "darkblue", 
+                       midpoint = 6.7,
+                       name = "Absolute Distance") 
+
+
+#Parameter om3 and za (lower on both...we are in the high-most corner of error)
+
+d %>% 
+  group_by(param_om3, param_ze) %>% 
+  summarise(om3_diff = mean(abs(om3_eHGF_dev_diff)), 
+            ze_diff = mean(abs(ze_eHGF_dev_diff)), 
+            abs_difference_om3ze = om3_diff + ze_diff) %>% 
+  ggplot(aes(param_om3, param_ze)) +                 
+  geom_tile(aes(fill = abs_difference_om3ze)) +
+  xlab("True Value of Omega3") +  
+  ylab("True Value of Zeta") +
+  theme_classic() +
+  scale_fill_gradient2(low = "darkred", 
+                       mid = "yellow", 
+                       high = "darkblue", 
+                       midpoint = 6.7,
+                       name = "Absolute Distance") 
+```
+
+```{r}
+d_plot <- cbind(
+  d %>%
+    pivot_longer(
+      c("om2_HGF", "om2_eHGF", "om2_eHGF_dev"),
+      names_to = "Model", values_to = 'estumate_value') %>%
+    select(Model, estumate_value),
+  d %>%
+    pivot_longer(
+      c('om2_true'), 
+      names_to = "True",
+      values_to = 'true_value') %>%
+    select(True, true_value),
+    d %>%
+    pivot_longer(
+      c("na_HGF", "na_eHGF", "na_eHGF_dev"),
+      names_to = "na", values_to = 'na_value'
+    ) %>% 
+    select(na, na_value) %>% 
+    mutate(na_value = na_value != 0, na_alpha = ifelse(na_value, 1, 0.1))
+) 
+
+ggplot() +
+  geom_point(data = d_plot,
+             aes(x = estumate_value, y = as.factor(true_value), 
+                 color = na_value), 
+             alpha = d_plot$na_alpha,
+             shape = 1) +
+  scale_color_manual(values = c('black', 'firebrick')) +
+  geom_point(data = d_plot %>%
+      group_by(Model, true_value) %>%
+      summarise(m_val = mean(estumate_value)),
+    aes(y = as.factor(true_value), x = m_val),
+    color = 'royalblue') +
+  facet_wrap( ~ Model, scales = 'free_x', 
+              labeller = as_labeller(c('om2_eHGF' = 'eHGF', 
+                                       'om2_eHGF_dev' = 'eHGF  (Numerical Stability)',
+                                       'om2_HGF' = 'HGF'))) +
+  geom_segment(data=data.frame(x=c(-9), y=c(1), xend=c(1), yend=c(11)), 
+               aes(x = x, y = y, xend = xend, yend = yend), 
+               size=0.5, color="royalblue", lty = 2) +
+  labs(x = 'Estimated Values', y = 'True Values',
+       title = 'Omega 2nd Level', subtitle = 'Ability to Recover Parameters') +
+  theme_minimal()
+
+
+d_plot <- cbind(
+  d %>%
+    pivot_longer(
+      c("om3_HGF", "om3_eHGF", "om3_eHGF_dev"),
+      names_to = "Model", values_to = 'estumate_value') %>%
+    select(Model, estumate_value),
+  d %>%
+    pivot_longer(
+      c('om3_true'), names_to = "True", values_to = 'true_value') %>%
+    select(True, true_value),
+    d %>%
+    pivot_longer(
+      c("na_HGF", "na_eHGF", "na_eHGF_dev"),
+      names_to = "na", values_to = 'na_value') %>% 
+    select(na, na_value) %>% 
+    mutate(na_value = na_value != 0, na_alpha = ifelse(na_value, 1, 0.1))
+) 
+
+ggplot() +
+  geom_point(
+    data = d_plot,
+    aes(x = estumate_value, y = as.factor(true_value), 
+        color = na_value),
+    alpha = d_plot$na_alpha,
+    shape = 1) +
+  scale_color_manual(values = c('black', 'firebrick')) +
+  geom_point(
+    data = d_plot %>%
+      group_by(Model, true_value) %>%
+      summarise(m_val = mean(estumate_value)),
+    aes(y = as.factor(true_value), x = m_val), color = 'royalblue') +
+  facet_wrap(~ Model, scales = 'free_x', labeller = as_labeller(
+    c('om3_eHGF' = 'eHGF',
+      'om3_eHGF_dev' = 'eHGF (Numerical Stability)',
+      'om3_HGF' = 'HGF'))) +
+  geom_segment(data=data.frame(x=c(-5), y=c(1), xend=c(5), yend=c(11)), 
+               aes(x = x, y = y, xend = xend, yend = yend), 
+               size=0.5, color="royalblue", lty = 2) +
+  labs(x = 'Estimated Values', y = 'True Values', 
+       title = 'Omega 3rd Level', 
+       subtitle = 'Ability to Recover Parameters') +
+  theme_minimal()
+
+d_plot <- cbind(
+  d %>%
+    pivot_longer(
+      c("ze_HGF", "ze_eHGF", "ze_eHGF_dev"),
+      names_to = "Model", values_to = 'estumate_value'
+    ) %>%
+    select(Model, estumate_value),
+  d %>%
+    pivot_longer(c('ze_true'),
+      names_to = "True", values_to = 'true_value') %>%
+    select(True, true_value),
+    d %>%
+    pivot_longer(
+      c("na_HGF", "na_eHGF", "na_eHGF_dev"), 
+      names_to = "na", values_to = 'na_value') %>% 
+    select(na, na_value) %>% 
+    mutate(na_value = na_value != 0, na_alpha = ifelse(na_value, 1, 0.1))
+) 
+
+ggplot() +
+  geom_point(
+    data = d_plot,
+    aes(x = estumate_value, y = as.factor(true_value), color = na_value), 
+    alpha = d_plot$na_alpha,
+    shape = 1) +
+  scale_color_manual(values = c('black', 'firebrick')) +
+  geom_point(
+    data = d_plot %>%
+      group_by(Model, true_value) %>%
+      summarise(m_val = mean(estumate_value)),
+    aes(y = as.factor(true_value), x = m_val), color = 'royalblue') +
+  xlim(-1, 30) +
+  facet_wrap(~ Model, labeller = as_labeller(
+    c('ze_eHGF' = 'eHGF',
+      'ze_eHGF_dev' = 'eHGF (Numerical Stability)',
+      'ze_HGF' = 'HGF'))) +
+  geom_segment(data=data.frame(x=c(1), y=c(0.5), xend=c(5), yend=c(10)), 
+               aes(x = x, y = y, xend = xend, yend = yend), 
+               size=0.5, color="royalblue", lty = 2) +
+  geom_segment(data=data.frame(x=c(5), y=c(10), xend=c(7), yend=c(12)), 
+               aes(x = x, y = y, xend = xend, yend = yend), 
+               size=0.5, color="royalblue", lty = 2) +
+  labs(x = 'Estimated Values', y = 'True Values', 
+       title = 'Zeta',  
+       subtitle = 'Ability to Recover Parameters') +
+  theme_minimal()
+
+
+```
+
+### LMER
+```{r}
+om2_long <- d %>%
+  pivot_longer(c("om2_HGF_diff",
+                 "om2_eHGF_diff",
+                 "om2_eHGF_dev_diff"), 
+               names_to = "Models",
+               values_to = 'Difference') %>% 
+  select('Models', 
+         'Difference', 
+         'om2_true',
+         'om3_true',
+         'ze_true') %>% 
+  mutate(Models = as.factor(Models),
+         om2_true = as.factor(om2_true),
+         om3_true = as.factor(om3_true),
+         ze_true = as.factor(ze_true))
+
+om3_long <- d %>%
+  pivot_longer(c("om3_HGF_diff",
+                 "om3_eHGF_diff",
+                 "om3_eHGF_dev_diff"), 
+               names_to = "Models",
+               values_to = 'Difference') %>% 
+  select('Models', 
+         'Difference', 
+         'om2_true',
+         'om3_true',
+         'ze_true') %>% 
+  mutate(Models = as.factor(Models),
+         om2_true = as.factor(om2_true),
+         om3_true = as.factor(om3_true),
+         ze_true = as.factor(ze_true))
+
+ze_long <- d %>%
+  pivot_longer(c("ze_HGF_diff",
+                 "ze_eHGF_diff",
+                 "ze_eHGF_dev_diff"), 
+               names_to = "Models",
+               values_to = 'Difference') %>% 
+  select('Models', 
+         'Difference', 
+         'om2_true',
+         'om3_true',
+         'ze_true') %>% 
+  mutate(Models = as.factor(Models),
+         om2_true = as.factor(om2_true),
+         om3_true = as.factor(om3_true),
+         ze_true = as.factor(ze_true))
+
+om2_long %>%
+  ggplot(aes(x = om2_true,
+             y = Difference,
+             color = ze_true)) +
+  geom_point(shape = 1,
+             alpha = 0.7) +
+  facet_wrap( ~ Models) +
+  theme_minimal()
+
+om3_long %>%
+  ggplot(aes(x = om3_true,
+             y = Difference,
+             color = ze_true)) +
+  geom_point(shape = 1,
+             alpha = 0.7) +
+  facet_wrap( ~ Models) +
+  theme_minimal()
+
+ze_long %>%
+  ggplot(aes(x = ze_true,
+             y = Difference,
+             color = om3_true)) +
+  geom_point(shape = 1,
+             alpha = 0.7) +
+  facet_wrap( ~ Models) +
+  theme_minimal()
+
+
+```
+
+
+```{r}
+# Bayesian om2
+f1_om2 <- bf(Difference ~ 0 + Models +
+                 (Models | ze_true) +
+                 (Models | om2_true) +
+                 (Models | om3_true))
+
+get_prior(f1_om2, data = om2_long, family = student())
+
+p1_om2 <- c(
+  prior(normal(0, 0.5), class = b),
+  prior(normal(1, 0.5), class = sd),
+  prior(normal(1, 0.5), class = sigma)
+)
+
+p_m1_om2 <- brm(
+  f1_om2,
+  data = om2_long,
+  family = student(),
+  prior = p1_om2,
+  sample_prior = "only",
+  backend = "cmdstanr",
+  chains = 2,
+  core = 2,
+  threads = threading(2)
+)
+
+om2_pp1 <- pp_check(p_m1_om2, nsamples = 100)
+
+m1_om2 <- brm(
+  f1_om2,
+  data = om2_long[sample(1:nrow(om2_long), 15000),],
+  family = student(),
+  prior = p1_om2,
+  sample_prior = T,
+  backend = "cmdstanr",
+  control = list(
+    adapt_delta = 0.99,
+    max_treedepth = 20),
+  iter = 4000,
+  chains = 2,
+  core = 4,
+  threads = threading(4)
+)
+
+om2_pp2 <- pp_check(m1_om2, nsamples = 100)
+
+postsum <- summary(m1_om2)
+postsum
+mcmc_trace(m1_om2,
+           pars = c("b_Modelsom2_eHGF_dev_diff", 
+                    "b_Modelsom2_eHGF_diff", 
+                    'b_Modelsom2_HGF_diff',
+                    'sigma',
+                    'nu')) +
+  theme_classic() 
+
+om2_pp1$scales$scales[[1]]$labels <- c('Distribution of Data', 'Distribution of Predictions')
+om2_pp2$scales$scales[[1]]$labels <- c('Distribution of Data', 'Distribution of Predictions')
+
+om2_pp1 + xlim(-10,10)
+om2_pp2 + xlim(-10,10)
+
+
+save(m1_om2, file = "m1_om2_try.rds")
+try <- load("m1_om2_try.rds")
+
+```
+
+```{r}
+post_om2 <- posterior_samples(m1_om2) %>% 
+  rename(eHGF = b_Modelsom2_eHGF_diff,
+         HGF = b_Modelsom2_HGF_diff,
+         Prior = prior_b,
+         `eHGF (Numerical Stability)` = b_Modelsom2_eHGF_dev_diff,
+         Sigma = sigma,
+         `Prior Sigma` = prior_sigma,
+         Nu = nu,
+         `Prior Nu` = prior_nu)
+
+post_om2 %>% 
+  pivot_longer(c(`eHGF (Numerical Stability)`, 
+                 eHGF, 
+                 HGF,
+                 Prior), names_to = "Estimates") %>%
+  ggplot(aes(fill = Estimates)) +
+  geom_density(aes(value), alpha = 0.3) +
+  labs(x = 'Difference Between Estimate and True Omega in 2nd Level',
+       y = 'Probability Density') +
+  theme_minimal()
+
+post_om2 %>% 
+  pivot_longer(c(Sigma,
+                 `Prior Sigma`), names_to = "Estimates") %>%
+  ggplot(aes(fill = Estimates)) +
+  geom_density(aes(value), alpha = 0.3) +
+  labs(x = 'Estimated Sigma for Omega in 2nd Level',
+       y = 'Probability Density') +
+  theme_minimal()
+
+post_om2 %>% 
+  pivot_longer(c(Nu,
+                 `Prior Nu`), names_to = "Estimates") %>%
+  ggplot(aes(fill = Estimates)) +
+  labs(x = 'Estimated Nu for Omega in 2nd Level',
+       y = 'Probability Density') +
+  geom_density(aes(value), alpha = 0.3) +
+  xlim(-1, 5) +
+  theme_minimal()
+
+plot(conditional_effects(
+  m1_om2,
+  spaghetti = T,
+  nsamples = 100,
+  method = "fitted"),
+points = F)
+
+plot(hypothesis(
+  m1_om2,
+  c(
+    "Modelsom2_eHGF_dev_diff < Modelsom2_eHGF_diff",
+    "Modelsom2_eHGF_dev_diff = Modelsom2_eHGF_diff",
+    "Modelsom2_eHGF_dev_diff > Modelsom2_eHGF_diff",
+    "Modelsom2_eHGF_dev_diff < Modelsom2_HGF_diff",
+    "Modelsom2_eHGF_dev_diff = Modelsom2_HGF_diff",
+    "Modelsom2_eHGF_dev_diff > Modelsom2_HGF_diff",
+    "Modelsom2_HGF_diff < Modelsom2_eHGF_diff",
+    "Modelsom2_HGF_diff = Modelsom2_eHGF_diff",
+    "Modelsom2_HGF_diff > Modelsom2_eHGF_diff")))
+
+hypothesis(
+  m1_om2,
+  c(
+    "Modelsom2_eHGF_dev_diff < Modelsom2_eHGF_diff",
+    "Modelsom2_eHGF_dev_diff = Modelsom2_eHGF_diff",
+    "Modelsom2_eHGF_dev_diff > Modelsom2_eHGF_diff",
+    "Modelsom2_eHGF_dev_diff < Modelsom2_HGF_diff",
+    "Modelsom2_eHGF_dev_diff = Modelsom2_HGF_diff",
+    "Modelsom2_eHGF_dev_diff > Modelsom2_HGF_diff",
+    "Modelsom2_HGF_diff < Modelsom2_eHGF_diff",
+    "Modelsom2_HGF_diff = Modelsom2_eHGF_diff",
+    "Modelsom2_HGF_diff > Modelsom2_eHGF_diff"))
+
+
+post_om2 %>% pivot_longer(c(b_Modelsom2_eHGF_dev_diff,
+                           b_Modelsom2_eHGF_diff,
+                           b_Modelsom2_HGF_diff),
+                         names_to = 'Models') %>% 
+  group_by(Models) %>% 
+  summarise(Mean = mean(value),
+            upper = Mean + sd(value),
+            lower = Mean - sd(value),
+            ) %>% 
+  ggplot(aes(x = Models, y = Mean)) +
+  geom_pointrange(aes(ymax = upper, 
+                  ymin = lower),
+                  shape = 1) +
+  labs(y = 'Estimated Error in Omega 2nd level') +
+  scale_x_discrete(labels = c('eHGF (Numerical Stability)','eHGF','HGF')) +
+  theme_minimal()
+
+```
+
+```{r}
+# Bayesian Zeta Model
+p2_om3 <- c(
+  prior(normal(0, 1), class = b),
+  prior(normal(1, 1), class = sd),
+  prior(normal(1, 0.5), class = sigma)
+)
+
+p_m2_om3 <- brm(
+  f1_om3,
+  data = om3_long,
+  family = student(),
+  prior = p2_om3,
+  sample_prior = "only",
+  backend = "cmdstanr",
+  chains = 2,
+  core = 2,
+  threads = threading(2)
+)
+
+om3_pp1 <- pp_check(p_m2_om3, nsamples = 100)
+
+m2_om3 <- brm(
+  f1_om3,
+  data = om3_long[sample(1:nrow(om3_long), 15000),],
+  family = student(),
+  prior = p2_om3,
+  sample_prior = T,
+  backend = "cmdstanr",
+  file = 'm1_om3_fit2',
+  control = list(
+    adapt_delta = 0.9,
+    max_treedepth = 20),
+  iter = 4000,
+  chains = 2,
+  core = 4,
+  threads = threading(4)
+)
+
+om3_pp2 <- pp_check(m2_om3, nsamples = 100)
+
+postsum <- summary(m2_om3)
+
+mcmc_trace(m2_om3,
+           pars = c("b_Modelsom3_eHGF_dev_diff", 
+                    "b_Modelsom3_eHGF_diff", 
+                    'b_Modelsom3_HGF_diff',
+                    'sigma', 
+                    'nu')) +
+  theme_classic() 
+
+
+om3_pp1$scales$scales[[1]]$labels <- c('Distribution of Data', 'Distribution of Predictions')
+om3_pp2$scales$scales[[1]]$labels <- c('Distribution of Data', 'Distribution of Predictions')
+
+om3_pp1 + xlim(-15,15)
+om3_pp2 + xlim(-15,15)
+
+postsum
+
+# save(m1_om3, file = "m1_om3_try.rds")
+# try <- load("m1_om3_try.rds")
+
+```
+
+```{r}
+post_om3 <- posterior_samples(m2_om3) %>% 
+  rename(eHGF = b_Modelsom3_eHGF_diff,
+         HGF = b_Modelsom3_HGF_diff,
+         Prior = prior_b,
+         `eHGF (Numerical Stability)` = b_Modelsom3_eHGF_dev_diff,
+         Sigma = sigma,
+         `Prior Sigma` = prior_sigma,
+         Nu = nu,
+         `Prior Nu` = prior_nu)
+
+post_om3 %>% 
+  pivot_longer(c(`eHGF (Numerical Stability)`, 
+                 eHGF, 
+                 HGF,
+                 Prior), names_to = "Estimates", values_to = 'Difference') %>%
+  ggplot(aes(fill = Estimates)) +
+  geom_density(aes(Difference), alpha = 0.3) +
+  labs(x = 'Difference Between Estimate and True Omega in 3rd Level',
+       y = 'Probability Density') +
+  theme_minimal()
+
+post_om3 %>% 
+  pivot_longer(c(Sigma,
+                 `Prior Sigma`), names_to = "Estimates") %>%
+  ggplot(aes(fill = Estimates)) +
+  geom_density(aes(value), alpha = 0.3) +
+  labs(x = 'Estimated Sigma for Omega in 3rd Level',
+       y = 'Probability Density') +
+  theme_minimal()
+
+post_om3 %>% 
+  pivot_longer(c(Nu,
+                 `Prior Nu`), names_to = "Estimates") %>%
+  ggplot(aes(fill = Estimates)) +
+  geom_density(aes(value), alpha = 0.3) +
+  xlim(0, 10) +
+  labs(x = 'Estimated Nu for Omega in 3rd Level',
+       y = 'Probability Density') +
+  theme_minimal()
+
+
+plot(conditional_effects(
+  m1_om3,
+  spaghetti = T,
+  nsamples = 100,
+  method = "fitted"),
+points = F)
+
+# plot(hypothesis(
+#   m1_om3,
+#   c(
+#     "Modelsom3_eHGF_dev_diff < Modelsom3_eHGF_diff",
+#     "Modelsom3_eHGF_dev_diff = Modelsom3_eHGF_diff",
+#     "Modelsom3_eHGF_dev_diff > Modelsom3_eHGF_diff",
+#     "Modelsom3_eHGF_dev_diff < Modelsom3_HGF_diff",
+#     "Modelsom3_eHGF_dev_diff = Modelsom3_HGF_diff",
+#     "Modelsom3_eHGF_dev_diff > Modelsom3_HGF_diff",
+#     "Modelsom3_HGF_diff < Modelsom3_eHGF_diff",
+#     "Modelsom3_HGF_diff = Modelsom3_eHGF_diff",
+#     "Modelsom3_HGF_diff > Modelsom3_eHGF_diff")))
+
+hypothesis(
+  m1_om3,
+  c(
+    "Modelsom3_eHGF_dev_diff < Modelsom3_eHGF_diff",
+    "Modelsom3_eHGF_dev_diff = Modelsom3_eHGF_diff",
+    "Modelsom3_eHGF_dev_diff > Modelsom3_eHGF_diff",
+    "Modelsom3_eHGF_dev_diff < Modelsom3_HGF_diff",
+    "Modelsom3_eHGF_dev_diff = Modelsom3_HGF_diff",
+    "Modelsom3_eHGF_dev_diff > Modelsom3_HGF_diff",
+    "Modelsom3_HGF_diff < Modelsom3_eHGF_diff",
+    "Modelsom3_HGF_diff = Modelsom3_eHGF_diff",
+    "Modelsom3_HGF_diff > Modelsom3_eHGF_diff"))
+
+
+post_om3 %>% pivot_longer(c(`eHGF (Numerical Stability)`,
+                            eHGF,
+                            HGF),
+                          names_to = 'Models') %>%
+  group_by(Models) %>%
+  summarise(
+    Mean = mean(value),
+    upper = Mean + sd(value),
+    lower = Mean - sd(value),
+  ) %>%
+  ggplot(aes(x = Models, y = Mean)) +
+  geom_pointrange(aes(ymax = upper,
+                      ymin = lower),
+                  shape = 1) +
+  labs(y = 'Estimated Error in Omega 3rd level') +
+  scale_x_discrete(labels = c('eHGF (Numerical Stability)', 'eHGF', 'HGF')) +
+  theme_minimal()
+
+```
+
+
+```{r}
+# Bayesian ze
+f1_ze <- bf(Difference ~ 0 + Models +
+                 (Models | ze_true) +
+                 (Models | om2_true) +
+                 (Models | om3_true))
+
+get_prior(f1_ze, data = ze_long, family = student())
+
+# wider prior
+p1_ze <- c(
+  prior(normal(0, 0.5), class = b),
+  prior(normal(1, 0.5), class = sd),
+  prior(normal(1, 0.5), class = sigma),
+  prior(normal(1, 0.5), class = nu)
+)
+
+p_m1_ze <- brm(
+  f1_ze,
+  data = ze_long,
+  family = student(),
+  prior = p1_ze,
+  sample_prior = "only",
+  backend = "cmdstanr",
+  chains = 2,
+  core = 2,
+  threads = threading(2)
+)
+
+ze_pp1 <- pp_check(p_m1_ze, nsamples = 100)
+
+m1_ze <- brm(
+  f1_ze,
+  data = ze_long[sample(1:nrow(ze_long), 15000),],
+  family = student(),
+  prior = p1_ze,
+  sample_prior = T,
+  backend = "cmdstanr",
+  file = 'm1_ze_fit2',
+  control = list(
+    adapt_delta = 0.99,
+    max_treedepth = 20),
+  iter = 4000,
+  chains = 2,
+  core = 4,
+  threads = threading(4)
+)
+
+ze_pp2 <- pp_check(m1_ze, nsamples = 100)
+
+postsum <- summary(m1_ze)
+
+mcmc_trace(m1_ze,
+           pars = c("b_Modelsze_eHGF_dev_diff", 
+                    "b_Modelsze_eHGF_diff", 
+                    'b_Modelsze_HGF_diff',
+                    'sigma', 
+                    'nu')) +
+  theme_classic() 
+
+ze_pp1$scales$scales[[1]]$labels <- c('Distribution of Data', 'Distribution of Predictions')
+ze_pp2$scales$scales[[1]]$labels <- c('Distribution of Data', 'Distribution of Predictions')
+
+
+ze_pp1 + xlim(-15,15)
+ze_pp2 + xlim(-15,15)
+
+postsum$spec_pars
+
+# save(m1_om3, file = "m1_om3_try.rds")
+# try <- load("m1_om3_try.rds")
+
+```
+
+
+```{r}
+post_ze <- posterior_samples(m1_ze) %>% 
+  rename(eHGF = b_Modelsze_eHGF_diff,
+         HGF = b_Modelsze_HGF_diff,
+         Prior = prior_b,
+         `eHGF (Numerical Stability)` = b_Modelsze_eHGF_dev_diff,
+         Sigma = sigma,
+         `Prior Sigma` = prior_sigma,
+         Nu = nu,
+         `Prior Nu` = prior_nu)
+
+post_ze %>% 
+  pivot_longer(c(`eHGF (Numerical Stability)`, 
+                 eHGF, 
+                 HGF,
+                 Prior), names_to = "Estimates") %>%
+  ggplot(aes(fill = Estimates)) +
+  geom_density(aes(value), alpha = 0.3) +
+  labs(x = 'Difference Between Estimate and True Zeta',
+       y = 'Probability Density') +
+  theme_minimal()
+
+post_ze %>% 
+  pivot_longer(c(Sigma,
+                 `Prior Sigma`), names_to = "Estimates") %>%
+  ggplot(aes(fill = Estimates)) +
+  geom_density(aes(value), alpha = 0.3) +
+  labs(x = 'Estimated Sigma for Zeta',
+       y = 'Probability Density') +
+  theme_minimal()
+
+post_ze %>% 
+  pivot_longer(c(Nu, `Prior Nu`), names_to = "Estimates") %>%
+  ggplot(aes(fill = Estimates)) +
+  geom_density(aes(value), alpha = 0.3) +
+  labs(x = 'Estimated Nu for Zeta',
+       y = 'Probability Density') +
+   xlim(0, 10) +
+  theme_minimal()
+
+
+plot(conditional_effects(
+  m1_ze,
+  spaghetti = T,
+  nsamples = 100,
+  method = "fitted"),
+points = F)
+
+# plot(hypothesis(
+#   m1_ze,
+#   c(
+#     "Modelsze_eHGF_dev_diff < Modelsze_eHGF_diff",
+#     "Modelsze_eHGF_dev_diff = Modelsze_eHGF_diff",
+#     "Modelsze_eHGF_dev_diff > Modelsze_eHGF_diff",
+#     "Modelsze_eHGF_dev_diff < Modelsze_HGF_diff",
+#     "Modelsze_eHGF_dev_diff = Modelsze_HGF_diff",
+#     "Modelsze_eHGF_dev_diff > Modelsze_HGF_diff",
+#     "Modelsze_HGF_diff < Modelsze_eHGF_diff",
+#     "Modelsze_HGF_diff = Modelsze_eHGF_diff",
+#     "Modelsze_HGF_diff > Modelsze_eHGF_diff")))
+
+hypothesis(
+  m1_ze,
+  c(
+    "Modelsze_eHGF_dev_diff < Modelsze_eHGF_diff",
+    "Modelsze_eHGF_dev_diff = Modelsze_eHGF_diff",
+    "Modelsze_eHGF_dev_diff > Modelsze_eHGF_diff",
+    "Modelsze_eHGF_dev_diff < Modelsze_HGF_diff",
+    "Modelsze_eHGF_dev_diff = Modelsze_HGF_diff",
+    "Modelsze_eHGF_dev_diff > Modelsze_HGF_diff",
+    "Modelsze_HGF_diff < Modelsze_eHGF_diff",
+    "Modelsze_HGF_diff = Modelsze_eHGF_diff",
+    "Modelsze_HGF_diff > Modelsze_eHGF_diff"))
+
+
+post_ze %>% pivot_longer(c(b_Modelsze_eHGF_dev_diff,
+                           b_Modelsze_eHGF_diff,
+                           b_Modelsze_HGF_diff),
+                         names_to = 'Models') %>% 
+  group_by(Models) %>% 
+  summarise(Mean = mean(value),
+            upper = Mean + sd(value),
+            lower = Mean - sd(value),
+            ) %>% 
+  ggplot(aes(x = Models, y = Mean)) +
+  geom_pointrange(aes(ymax = upper, 
+                  ymin = lower),
+                  shape = 1) +
+  labs(y = 'Estimated Error in Zeta') +
+  scale_x_discrete(labels = c('eHGF (Numerical Stability)','eHGF','HGF')) +
+  theme_minimal()
+
+```
+### NEW ANALYSIS 
+
+```{r}
+
+d %>% pivot_longer(
+      c("om2_eHGF_eHGF_num_dif", "om3_eHGF_eHGF_num_dif", "ze_eHGF_eHGF_num_dif"),
+      names_to = "Model", values_to = 'difference')
+  ggplot(aes(x = ))
+
+d %>% 
+  ggplot(aes(x = om2_true,
+             y = om2_eHGF_eHGF_num_dif)) +
+  geom_point(shape = 1,
+             alpha = 0.5) +
+  geom_hline(yintercept = 0,
+             color = 'firebrick',
+             lty =2) +
+  theme_minimal()
+
+d %>% 
+  ggplot(aes(x = om3_true,
+             y = om3_eHGF_eHGF_num_dif)) +
+  geom_point(shape = 1,
+             alpha = 0.5) +
+  geom_hline(yintercept = 0,
+             color = 'firebrick',
+             lty =2) +
+  theme_minimal()
+
+d %>% 
+  ggplot(aes(x = ze_true,
+             y = ze_eHGF_eHGF_num_dif)) +
+  geom_point(shape = 1,
+             alpha = 0.1) +
+  geom_hline(yintercept = 0,
+             color = 'firebrick',
+             lty =2) +
+  theme_minimal()
+
+d %>% 
+  ggplot(aes(x = ze_eHGF_eHGF_num_dif)) +
+  geom_density(fill = 'lightblue') +
+  theme_minimal()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
